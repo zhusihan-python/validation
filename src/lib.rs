@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use once_cell::sync::OnceCell;
-use mac_address::get_mac_address;
+use machine_uid;
 use rsa::{RsaPrivateKey, RsaPublicKey, Pkcs1v15Encrypt};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rand::rngs::OsRng;
@@ -47,15 +47,6 @@ static PRIVATE_KEY: OnceCell<RsaPrivateKey> = OnceCell::new();
 // 全局公钥实例，通过私钥生成
 static PUBLIC_KEY: OnceCell<RsaPublicKey> = OnceCell::new();
 
-
-fn get_mac() -> Option<String> {
-    match get_mac_address() {
-        Ok(Some(ma)) => Some(ma.to_string()),
-        Ok(None) => None,
-        Err(_) => None,
-    }
-}
-
 fn md5_hash(input: &str) -> String {
     let digest = md5::compute(input);
     format!("{:x}", digest)
@@ -80,7 +71,7 @@ pub fn rsa_encrypt(input: &str) -> String {
     STANDARD.encode(&encrypted_data)
 }
 
-fn verify_encrypted_data(encrypted_data_base64: &str, md5_mac: &str, private_key: &RsaPrivateKey) -> bool {
+fn verify_encrypted_data(encrypted_data_base64: &str, md5_guid: &str, private_key: &RsaPrivateKey) -> bool {
     // Base64 decode
     let encrypted_data = match STANDARD.decode(encrypted_data_base64) {
         Ok(data) => data,
@@ -103,17 +94,17 @@ fn verify_encrypted_data(encrypted_data_base64: &str, md5_mac: &str, private_key
     let decrypted_md5 = &decrypted_data[..decrypted_data.len() - SALT.len()];
 
     // Compare the decrypted MD5 hash with the provided MD5 hash
-    decrypted_md5 == md5_mac
+    decrypted_md5 == md5_guid
 }
 
 fn encrypt_and_save(root_dir: &str) {
-    let mac_address = get_mac().expect("Failed to get MAC address");
-    println!("MAC Address: {}", mac_address);
+    let machine_guid = machine_uid::get().unwrap();
+    println!("Guid: {}", machine_guid);
 
-    let md5_mac = md5_hash(&mac_address);
-    println!("MD5 of MAC: {}", md5_mac);
+    let md5_guid = md5_hash(&machine_guid);
+    println!("MD5 of Guid: {}", md5_guid);
 
-    let encrypted_data = rsa_encrypt(&md5_mac);
+    let encrypted_data = rsa_encrypt(&md5_guid);
     println!("Encrypted data: {:?}", encrypted_data);
 
     let file_path = format!("{}/check.pem", root_dir);
@@ -130,18 +121,18 @@ fn check_validation(root_dir: &str) -> bool {
     let message: String = fs::read_to_string(&file_path).expect("Unable to read data");
 
     // 获取mac
-    let mac_address = get_mac().expect("Failed to get MAC address");
-    println!("MAC Address: {}", mac_address);
+    let machine_guid = machine_uid::get().unwrap();
+    println!("Guid: {}", machine_guid);
 
-    let md5_mac = md5_hash(&mac_address);
-    println!("MD5 of MAC: {}", md5_mac);
+    let md5_guid = md5_hash(&machine_guid);
+    println!("MD5 of Guid: {}", md5_guid);
 
     let private_key = PRIVATE_KEY.get_or_init(|| {
         RsaPrivateKey::from_pkcs1_pem(PRIVATE_KEY_STR).expect("failed to load private key")
     });
 
     // Verify encrypted data
-    let is_valid = verify_encrypted_data(&message, &md5_mac, &private_key);
+    let is_valid = verify_encrypted_data(&message, &md5_guid, &private_key);
     println!("Is valid: {}", is_valid);
     is_valid
 }
